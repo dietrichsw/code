@@ -1,0 +1,154 @@
+import boto3
+import json
+import pandas as pd
+import time
+import datetime
+from pathlib import Path
+from datetime import datetime, timedelta
+
+#bucket and file path
+
+
+bucket_name = 'mp-forwarding-us-east-prod-corp-gdap'
+s3 = boto3.resource('s3')
+bucket = s3.Bucket(bucket_name)
+yesterday = datetime.now() - timedelta(1)
+current_date = yesterday.strftime('%Y-%m-%d')
+key_part_1 = 'US/Application_Startups/android/'
+key_part_2 = current_date + '/'
+key = key_part_1 + key_part_2
+
+dfs = pd.DataFrame()
+
+
+
+counter = 0
+for obj in bucket.objects.filter(Prefix=key):
+   counter = counter + 1
+   if counter > 5:
+       break
+   else:
+    print("Processing " + obj.key + '...')
+    lines = obj.get()['Body'].read().decode('utf-8').splitlines()
+    i = 0
+    for line in lines:
+        event = json.loads(line)
+        events = event['events']
+        data = event['events'][0]['data']
+        # event_type = event['events'][0]['event_type']
+        try:
+            event_type = event['events'][0]['event_type']
+        except:
+            event_type = 'None'
+        attr = data['custom_attributes']
+        dcs = data['device_current_state']
+        source_info = event['source_info']
+        app_info = event['application_info']
+        device_info = event['device_info']
+        user_attr = event['user_attributes']
+        context = event['context']
+        data_plan = context['data_plan']
+
+        ts = int(data['timestamp_unixtime_ms'])
+        ts_session_start = int(data['session_start_unixtime_ms'])
+        device_time_since_start = int(dcs['time_since_start_ms'])
+        et = int(event['timestamp_unixtime_ms'])
+        evt = {
+            "application_transition_type": data['application_transition_type'],
+            "time": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts/1000.0)),
+            "event_id": data['event_id'],
+            "source_message_id": data['source_message_id'],
+            "session_id": data['session_id'], 
+            "session_uuid": data['session_uuid'],
+            "event_type": events['event_type'] if 'event_type' in events else None,
+            "data_session_start": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts_session_start/1000.0)), 
+            "time_since_start_ms": dcs['time_since_start_ms'] if 'time_since_start_ms' in dcs else None,
+            "battery_level": dcs['battery_level'] if 'battery_level' in dcs else None,
+            "data_connection_type": dcs['data_connection_type'] if 'data_connection_type' in dcs else None,
+            "gps_state": dcs['gps_state'] if 'gps_state' in dcs else None,
+            "total_system_memory_usage_bytes": dcs['total_system_memory_usage_bytes'] if 'total_system_memory_usage_bytes' in dcs else None,
+            "disk_space_free_bytes": dcs['disk_space_free_bytes'] if 'disk_space_free_bytes' in dcs else None,
+            "external_disk_space_free_bytes": dcs['external_disk_space_free_bytes'] if 'external_disk_space_free_bytes' in dcs else None,
+            "system_memory_available_bytes": dcs['system_memory_available_bytes'] if 'system_memory_available_bytes' in dcs else None, 
+            "system_memory_low": dcs['system_memory_low'] if 'system_memory_low' in dcs else None,
+            "system_memory_threshold_bytes": dcs['system_memory_threshold_bytes'] if 'system_memory_threshold_bytes' in dcs else None,
+            "application_memory_available_bytes": dcs['application_memory_available_bytes'] if 'application_memory_available_bytes' in dcs else None, 
+            "application_memory_max_bytes": dcs['application_memory_max_bytes'] if 'application_memory_max_bytes' in dcs else None, 
+            "application_memory_total_bytes": dcs['application_memory_total_bytes'] if 'application_memory_total_bytes' in dcs else None,
+            "view_controller": data['view_controller'] if 'view_controller' in data else None,
+            "is_main_thread": data['is_main_thread'] if 'is_main_thread' in data else None,
+            "event_type": event['events'][0]['event_type'],
+            "canonical_name": data['canonical_name'] if 'canonical_name' in data else None,
+            "mpid": event['mpid'] if 'mpid' in event else None,
+            "event_time": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(et/1000.0)),
+            "batch_id": event['batch_id'] if 'batch_id' in event else None,
+            "message_id": event['message_id'] if 'message_id' in event else None,
+            "source_request_id": event['source_request_id'] if 'source_request_id' in event else None,
+            "schema_version": event['schema_version'] if 'schema_version' in event else None,
+            "brand": device_info['brand'] if 'brand' in device_info else None,
+            "product": device_info['product'] if 'product' in device_info else None,
+            "device": device_info['device'] if 'device' in device_info else None,
+            "android_uuid": device_info['android_uuid'] if 'android_uuid' in device_info else None,
+            "device_manufacturer": device_info['device_manufacturer'] if 'device_manufacturer' in device_info else None,
+            "platform": device_info['platform'] if 'platform' in device_info else None,
+            "os_version": device_info['os_version'] if 'os_version' in device_info else None,
+            "device_model": device_info['device_model'] if 'device_model' in device_info else None,
+            "screen_height": device_info['screen_height'] if 'screen_height' in device_info else None,
+            "screen_width": device_info['screen_width'] if 'screen_width' in device_info else None,
+            "screen_dpi": device_info['screen_dpi'] if 'screen_dpi' in device_info else None, 
+            "device_country": device_info['device_country'] if 'device_country' in device_info else None, 
+            "locale_language": device_info['locale_language'] if 'locale_language' in device_info else None,
+            "locale_country": device_info['locale_country'] if 'locale_country' in device_info else None,
+            "network_country": device_info['network_country'] if 'network_country' in device_info else None,
+            "network_carrier": device_info['network_carrier'] if 'network_carrier' in device_info else None,
+            "network_code": device_info['network_code'] if 'network_code' in device_info else None,
+            "network_mobile_country_code": device_info['network_mobile_country_code'] if 'network_mobile_country_code' in device_info else None,
+            "timezone_offset": device_info['timezone_offset'] if 'timezone_offset' in device_info else None,
+            "build_identifier": device_info['build_identifier'] if 'build_identifier' in device_info else None,
+            "http_header_user_agent": device_info['http_header_user_agent'] if 'http_header_user_agent' in device_info else None,
+            "push_token": device_info['push_token'] if 'push_token' in device_info else None,
+            "is_tablet": device_info['is_tablet'] if 'is_tablet' in device_info else None,
+            "push_notification_sound_enabled": device_info['push_notification_sound_enabled'] if 'push_notification_sound_enabled' in device_info else None, 
+            "push_notification_vibrate_enabled": device_info['push_notification_vibrate_enabled'] if 'push_notification_vibrate_enabled' in device_info else None, 
+            "supports_telephony": device_info['supports_telephony'] if 'supports_telephony' in device_info else None, 
+            "has_nfc": device_info['has_nfc'] if 'has_nfc' in device_info else None, 
+            "bluetooth_enabled": device_info['bluetooth_enabled'] if 'bluetooth_enabled' in device_info else None, 
+            "bluetooth_version": device_info['bluetooth_version'] if 'bluetooth_version' in device_info else None,  
+            "build_version_release": device_info['build_version_release'] if 'build_version_release' in device_info else None, 
+            "limit_ad_tracking": device_info['limit_ad_tracking'] if 'limit_ad_tracking' in device_info else None,  
+            "is_dst": device_info['is_dst'] if 'is_dst' in device_info else None, 
+            "application_name": app_info['application_name'] if 'application_name' in app_info else None,
+            "application_version": app_info['application_version'] if 'application_version' in app_info else None,
+            "application_build_number": app_info['application_build_number'] if 'application_build_number' in app_info else None, 
+            "install_referrer": app_info['install_referrer'] if 'install_referrer' in app_info else None,
+            "package": app_info['package'] if 'package' in app_info else None,
+            "os": app_info['os'] if 'os' in app_info else None, 
+            "android_advertising_id": user_attr['android_advertising_id'] if 'android_advertising_id' in user_attr else None,  
+            "channel": source_info['channel'] if 'channel' in source_info else None,
+            "mp_deviceid": event['mp_deviceid'] if 'mp_deviceid' in event else None,
+            "ip": event['ip'] if 'ip' in event else None,
+            "environment": event['environment'] if 'environment' in event else None,
+            "plan_id": data_plan['plan_id'] if 'plan_id' in data_plan else None,
+            "plan_version": data_plan['plan_version'] if 'plan_version' in data_plan else None,
+            "matched_data_points_count": data_plan['matched_data_points_count'] if 'matched_data_points_count' in data_plan else None,
+            "valid_data_points_count": data_plan['valid_data_points_count'] if 'valid_data_points_count' in data_plan else None,
+            "plan_display_name": data_plan['plan_display_name'] if 'plan_display_name' in data_plan else None,
+            "plan_validation_status": data_plan['plan_validation_status'] if 'plan_validation_status' in data_plan else None,
+            "plan_validation_message": data_plan['plan_validation_message'] if 'plan_validation_message' in data_plan else None,
+            "message_type": event['message_type'] if 'message_type' in event else None,
+        }
+        for identity in event['user_identities']:
+            if identity['identity_type'] == 'customer_id':
+                evt['ccp_id'] = identity['identity']
+            elif identity['identity_type'] == 'other':
+                evt['hashed_dcs_id'] = identity['identity']
+            elif identity['identity_type'] == 'other3':
+                evt['dcs_id'] = identity['identity']
+            elif identity['identity_type'] == 'email':
+                evt['email'] = identity['identity']
+            elif identity['identity_type'] == 'other4':
+                evt['dcs_id'] = identity['identity']
+    
+          
+        dfs = dfs.append(pd.DataFrame([evt]))
+          
